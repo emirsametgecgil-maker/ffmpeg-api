@@ -95,7 +95,7 @@ app.post("/process", upload.single("video"), async (req, res) => {
       });
     }
 
-    const filter = "scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280";
+    const filter ="scale=720:1280:force_original_aspect_ratio=increase," + "crop=720:1280," + "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:text='@designerpoLlo':fontcolor=white:fontsize=36:x=(w-text_w)/2:y=(h*0.73):box=1:boxcolor=black@0.45:boxborderw=10";
 
     const args = [
       "-hide_banner",
