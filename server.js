@@ -128,7 +128,7 @@ app.post("/process", upload.single("video"), async (req, res) => {
       fs.writeFileSync(hookFile, hook, "utf8");
       cleanupFiles.push(hookFile);
       filters.push(
-        `drawtext=fontfile=${escapePathForFilter(FONT_PATH)}:textfile=${escapePathForFilter(hookFile)}:reload=1:fontcolor=white:fontsize=72:x=(w-text_w)/2:y=(h*0.12):box=1:boxcolor=black@0.55:boxborderw=18:enable=between(t\\,0\\,2.5)`
+        `drawtext=fontfile=${escapePathForFilter(FONT_PATH)}:textfile=${escapePathForFilter(hookFile)}:reload=1:fontcolor=white:fontsize=72:x=(w-text_w)/2:y=(h*0.12):box=1:boxcolor=black@0.55:boxborderw=18:enable='between(t,0,2.5)'`
       );
     }
 
@@ -136,7 +136,7 @@ app.post("/process", upload.single("video"), async (req, res) => {
       fs.writeFileSync(ctaFile, cta, "utf8");
       cleanupFiles.push(ctaFile);
       filters.push(
-        `drawtext=fontfile=${escapePathForFilter(FONT_PATH)}:textfile=${escapePathForFilter(ctaFile)}:reload=1:fontcolor=white:fontsize=60:x=(w-text_w)/2:y=(h*0.82):box=1:boxcolor=black@0.55:boxborderw=18:enable=gte(t\\,5)`
+        `drawtext=fontfile=${escapePathForFilter(FONT_PATH)}:textfile=${escapePathForFilter(ctaFile)}:reload=1:fontcolor=white:fontsize=60:x=(w-text_w)/2:y=(h*0.82):box=1:boxcolor=black@0.55:boxborderw=18:enable='gte(t,5)'`
       );
     }
 
