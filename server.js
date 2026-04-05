@@ -1,11 +1,16 @@
 const express = require("express");
 const multer = require("multer");
 const fs = require("fs");
-const path = require("path");
 const { execFile } = require("child_process");
+const https = require("https");
+const http = require("http");
+const { URL } = require("url");
 
 const app = express();
 const upload = multer({ dest: "/tmp/uploads" });
+
+app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ extended: true }));
 
 const PORT = process.env.PORT || 3000;
 const FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf";
@@ -33,31 +38,50 @@ function runFfmpeg(args) {
   });
 }
 
+function downloadFile(fileUrl, outputPath) {
+  return new Promise((resolve, reject) => {
+    const parsed = new URL(fileUrl);
+    const client = parsed.protocol === "https:" ? https : http;
+
+    client
+      .get(fileUrl, (response) => {
+        if (response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
+          return resolve(downloadFile(response.headers.location, outputPath));
+        }
+
+        if (response.statusCode !== 200) {
+          return reject(new Error(`Download failed with status ${response.statusCode}`));
+        }
+
+        const fileStream = fs.createWriteStream(outputPath);
+        response.pipe(fileStream);
+
+        fileStream.on("finish", () => {
+          fileStream.close();
+          resolve();
+        });
+
+        fileStream.on("error", reject);
+      })
+      .on("error", reject);
+  });
+}
+
 app.get("/", (_req, res) => {
   res.json({
     ok: true,
-    message: "ffmpeg api is running"
+    message: "ffmpeg api is running",
   });
 });
 
-app.post("/process", upload.single("video"), async (req, res) => {
-  const inputFile = req.file?.path;
-  const hook = safeText(req.body.hook || "");
-  const cta = safeText(req.body.cta || "");
-  const username = safeText(req.body.username || "");
-  const fps = Number(req.body.fps || 30);
-
-  if (!inputFile) {
-    return res.status(400).json({ ok: false, error: "video field is required" });
-  }
-
+async function processVideo({ inputFile, hook, cta, username, fps, res }) {
   const outputFile = `/tmp/output-${Date.now()}.mp4`;
 
   try {
     const filters = [
       "scale=1080:1920:force_original_aspect_ratio=increase",
       "crop=1080:1920",
-      `fps=${Number.isFinite(fps) ? fps : 30}`
+      `fps=${Number.isFinite(fps) ? fps : 30}`,
     ];
 
     if (hook) {
@@ -96,7 +120,7 @@ app.post("/process", upload.single("video"), async (req, res) => {
       "128k",
       "-movflags",
       "+faststart",
-      outputFile
+      outputFile,
     ];
 
     await runFfmpeg(args);
@@ -115,7 +139,40 @@ app.post("/process", upload.single("video"), async (req, res) => {
     fs.promises.unlink(outputFile).catch(() => {});
     res.status(500).json({
       ok: false,
-      error: error.message
+      error: error.message,
+    });
+  }
+}
+
+app.post("/process", upload.single("video"), async (req, res) => {
+  const hook = safeText(req.body.hook || "");
+  const cta = safeText(req.body.cta || "");
+  const username = safeText(req.body.username || "");
+  const fps = Number(req.body.fps || 30);
+
+  let inputFile = req.file?.path;
+
+  try {
+    if (!inputFile && req.body.video_url) {
+      inputFile = `/tmp/input-${Date.now()}.mp4`;
+      await downloadFile(req.body.video_url, inputFile);
+    }
+
+    if (!inputFile) {
+      return res.status(400).json({
+        ok: false,
+        error: "video or video_url is required",
+      });
+    }
+
+    await processVideo({ inputFile, hook, cta, username, fps, res });
+  } catch (error) {
+    if (inputFile) {
+      fs.promises.unlink(inputFile).catch(() => {});
+    }
+    res.status(500).json({
+      ok: false,
+      error: error.message,
     });
   }
 });
