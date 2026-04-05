@@ -13,6 +13,15 @@ app.use(express.json({ limit: "20mb" }));
 app.use(express.urlencoded({ extended: true }));
 
 const PORT = process.env.PORT || 8080;
+const FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf";
+
+function normalizeText(text = "") {
+  return String(text)
+    .replace(/[‘’‚‛‹›]/g, "'")
+    .replace(/[“”„‟«»]/g, '"')
+    .replace(/\r/g, "")
+    .trim();
+}
 
 function downloadFile(fileUrl, outputPath) {
   return new Promise((resolve, reject) => {
@@ -82,6 +91,15 @@ app.post("/process", upload.single("video"), async (req, res) => {
   const id = Date.now();
   const outputFile = `/tmp/output-${id}.mp4`;
 
+  const hook = normalizeText(req.body.hook || "");
+  const cta = normalizeText(req.body.cta || "");
+  const username = normalizeText(req.body.username || "");
+
+  const hookFile = `/tmp/hook-${id}.txt`;
+  const ctaFile = `/tmp/cta-${id}.txt`;
+  const usernameFile = `/tmp/username-${id}.txt`;
+  const filterFile = `/tmp/filter-${id}.txt`;
+
   try {
     if (!inputFile && req.body.video_url) {
       inputFile = `/tmp/input-${id}.mp4`;
@@ -95,23 +113,65 @@ app.post("/process", upload.single("video"), async (req, res) => {
       });
     }
 
-    const filter ="scale=720:1280:force_original_aspect_ratio=increase," + "crop=720:1280," + "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:text='@designerpoLlo':fontcolor=white:fontsize=36:x=(w-text_w)/2:y=(h*0.73):box=1:boxcolor=black@0.45:boxborderw=10";
+    const cleanupFiles = [];
+
+    const lines = [
+      `scale=720:1280:force_original_aspect_ratio=increase`,
+      `crop=720:1280`,
+    ];
+
+    if (hook) {
+      fs.writeFileSync(hookFile, hook, "utf8");
+      cleanupFiles.push(hookFile);
+      lines.push(
+        `drawtext=fontfile='${FONT_PATH}':textfile='${hookFile}':reload=1:fontcolor=white:fontsize=48:x=(w-text_w)/2:y=(h*0.12):box=1:boxcolor=black@0.55:boxborderw=14:enable='between(t,0,2.5)'`
+      );
+    }
+
+    if (cta) {
+      fs.writeFileSync(ctaFile, cta, "utf8");
+      cleanupFiles.push(ctaFile);
+      lines.push(
+        `drawtext=fontfile='${FONT_PATH}':textfile='${ctaFile}':reload=1:fontcolor=white:fontsize=40:x=(w-text_w)/2:y=(h*0.82):box=1:boxcolor=black@0.55:boxborderw=12:enable='gte(t,5)'`
+      );
+    }
+
+    if (username) {
+      fs.writeFileSync(usernameFile, username, "utf8");
+      cleanupFiles.push(usernameFile);
+      lines.push(
+        `drawtext=fontfile='${FONT_PATH}':textfile='${usernameFile}':reload=1:fontcolor=white:fontsize=36:x=(w-text_w)/2:y=(h*0.73):box=1:boxcolor=black@0.45:boxborderw=10`
+      );
+    }
+
+    fs.writeFileSync(filterFile, lines.join(","), "utf8");
+    cleanupFiles.push(filterFile);
 
     const args = [
       "-hide_banner",
-      "-loglevel", "error",
+      "-loglevel",
+      "error",
       "-y",
-      "-threads", "2",
-      "-i", inputFile,
-      "-vf", "scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280",
-      "-c:v", "libx264",
-      "-preset", "ultrafast",
-      "-crf", "23",
-      "-pix_fmt", "yuv420p",
-      "-c:a", "copy",
-      "-movflags", "+faststart",
+      "-threads",
+      "2",
+      "-i",
+      inputFile,
+      "-filter_complex_script",
+      filterFile,
+      "-c:v",
+      "libx264",
+      "-preset",
+      "ultrafast",
+      "-crf",
+      "23",
+      "-pix_fmt",
+      "yuv420p",
+      "-c:a",
+      "copy",
+      "-movflags",
+      "+faststart",
       "-shortest",
-      outputFile
+      outputFile,
     ];
 
     await runFfmpeg(args);
@@ -138,6 +198,7 @@ app.post("/process", upload.single("video"), async (req, res) => {
     stream.on("close", () => {
       if (inputFile) fs.promises.unlink(inputFile).catch(() => {});
       fs.promises.unlink(outputFile).catch(() => {});
+      cleanupFiles.forEach((file) => fs.promises.unlink(file).catch(() => {}));
     });
 
     stream.pipe(res);
@@ -146,6 +207,9 @@ app.post("/process", upload.single("video"), async (req, res) => {
 
     if (inputFile) fs.promises.unlink(inputFile).catch(() => {});
     fs.promises.unlink(outputFile).catch(() => {});
+    [hookFile, ctaFile, usernameFile, filterFile].forEach((file) =>
+      fs.promises.unlink(file).catch(() => {})
+    );
 
     res.status(500).json({
       ok: false,
