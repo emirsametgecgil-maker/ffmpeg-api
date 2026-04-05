@@ -95,7 +95,7 @@ app.post("/process", upload.single("video"), async (req, res) => {
       });
     }
 
-    const filter = "scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280";
+    const filter = "scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280,fps=60";
 
     const args = [
       "-hide_banner",
