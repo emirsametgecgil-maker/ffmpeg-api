@@ -18,12 +18,15 @@ const FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf";
 
 function safeText(text = "") {
   return String(text)
+    .replace(/[‘’‚‛‹›]/g, "'")   // curly apostrophe -> normal
+    .replace(/[“”„‟«»]/g, '"')   // curly quote -> normal
     .replace(/\\/g, "\\\\")
     .replace(/:/g, "\\:")
     .replace(/'/g, "\\'")
     .replace(/\[/g, "\\[")
     .replace(/\]/g, "\\]")
     .replace(/,/g, "\\,")
+    .replace(/%/g, "\\%")
     .replace(/\n/g, " ");
 }
 
@@ -67,15 +70,12 @@ function runFfmpeg(args) {
     execFile(
       "ffmpeg",
       args,
-      {
-        maxBuffer: 100 * 1024 * 1024,
-      },
+      { maxBuffer: 100 * 1024 * 1024 },
       (error, stdout, stderr) => {
         if (error) {
-          reject(new Error(error.message || "ffmpeg failed"));
+          reject(new Error(stderr || error.message || "ffmpeg failed"));
           return;
         }
-
         resolve({ stdout, stderr });
       }
     );
