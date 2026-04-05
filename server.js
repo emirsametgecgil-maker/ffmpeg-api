@@ -13,15 +13,6 @@ app.use(express.json({ limit: "20mb" }));
 app.use(express.urlencoded({ extended: true }));
 
 const PORT = process.env.PORT || 8080;
-const FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf";
-
-function normalizeText(text = "") {
-  return String(text)
-    .replace(/[‘’‚‛‹›]/g, "'")
-    .replace(/[“”„‟«»]/g, '"')
-    .replace(/\r/g, "")
-    .trim();
-}
 
 function downloadFile(fileUrl, outputPath) {
   return new Promise((resolve, reject) => {
@@ -64,9 +55,15 @@ function runFfmpeg(args) {
       { maxBuffer: 100 * 1024 * 1024 },
       (error, stdout, stderr) => {
         if (error) {
-          reject(new Error(stderr || error.message || "ffmpeg failed"));
+          reject({
+            message: error.message || "ffmpeg failed",
+            stderr: stderr || "",
+            stdout: stdout || "",
+            args,
+          });
           return;
         }
+
         resolve({ stdout, stderr });
       }
     );
@@ -84,16 +81,7 @@ app.post("/process", upload.single("video"), async (req, res) => {
   let inputFile = req.file?.path || null;
   const id = Date.now();
   const outputFile = `/tmp/output-${id}.mp4`;
-
-  const hook = normalizeText(req.body.hook || "");
-  const cta = normalizeText(req.body.cta || "");
-  const username = normalizeText(req.body.username || "");
   const fps = Number(req.body.fps || 60);
-
-  const hookFile = `/tmp/hook-${id}.txt`;
-  const ctaFile = `/tmp/cta-${id}.txt`;
-  const usernameFile = `/tmp/username-${id}.txt`;
-  const filterFile = `/tmp/filter-${id}.txt`;
 
   try {
     if (!inputFile && req.body.video_url) {
@@ -108,49 +96,7 @@ app.post("/process", upload.single("video"), async (req, res) => {
       });
     }
 
-    const cleanupFiles = [];
-
-    if (hook) {
-      fs.writeFileSync(hookFile, hook, "utf8");
-      cleanupFiles.push(hookFile);
-    }
-
-    if (cta) {
-      fs.writeFileSync(ctaFile, cta, "utf8");
-      cleanupFiles.push(ctaFile);
-    }
-
-    if (username) {
-      fs.writeFileSync(usernameFile, username, "utf8");
-      cleanupFiles.push(usernameFile);
-    }
-
-    const lines = [
-      `scale=1080:1920:force_original_aspect_ratio=increase`,
-      `crop=1080:1920`,
-      `fps=${Number.isFinite(fps) ? fps : 60}`,
-    ];
-
-    if (hook) {
-      lines.push(
-        `drawtext=fontfile='${FONT_PATH}':textfile='${hookFile}':reload=1:fontcolor=white:fontsize=72:x=(w-text_w)/2:y=(h*0.12):box=1:boxcolor=black@0.55:boxborderw=18:enable='between(t,0,2.5)'`
-      );
-    }
-
-    if (cta) {
-      lines.push(
-        `drawtext=fontfile='${FONT_PATH}':textfile='${ctaFile}':reload=1:fontcolor=white:fontsize=60:x=(w-text_w)/2:y=(h*0.82):box=1:boxcolor=black@0.55:boxborderw=18:enable='gte(t,5)'`
-      );
-    }
-
-    if (username) {
-      lines.push(
-        `drawtext=fontfile='${FONT_PATH}':textfile='${usernameFile}':reload=1:fontcolor=white:fontsize=46:x=(w-text_w)/2:y=(h*0.73):box=1:boxcolor=black@0.45:boxborderw=12`
-      );
-    }
-
-    fs.writeFileSync(filterFile, lines.join(","), "utf8");
-    cleanupFiles.push(filterFile);
+    const filter = `scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,fps=${Number.isFinite(fps) ? fps : 60}`;
 
     const args = [
       "-hide_banner",
@@ -159,8 +105,8 @@ app.post("/process", upload.single("video"), async (req, res) => {
       "-y",
       "-i",
       inputFile,
-      "-filter_complex_script",
-      filterFile,
+      "-vf",
+      filter,
       "-c:v",
       "libx264",
       "-preset",
@@ -200,7 +146,6 @@ app.post("/process", upload.single("video"), async (req, res) => {
     stream.on("close", () => {
       if (inputFile) fs.promises.unlink(inputFile).catch(() => {});
       fs.promises.unlink(outputFile).catch(() => {});
-      cleanupFiles.forEach((file) => fs.promises.unlink(file).catch(() => {}));
     });
 
     stream.pipe(res);
@@ -209,13 +154,13 @@ app.post("/process", upload.single("video"), async (req, res) => {
 
     if (inputFile) fs.promises.unlink(inputFile).catch(() => {});
     fs.promises.unlink(outputFile).catch(() => {});
-    [hookFile, ctaFile, usernameFile, filterFile].forEach((file) =>
-      fs.promises.unlink(file).catch(() => {})
-    );
 
     res.status(500).json({
       ok: false,
       error: error.message || "Unknown processing error",
+      stderr: error.stderr || "",
+      stdout: error.stdout || "",
+      args: error.args || [],
     });
   }
 });
