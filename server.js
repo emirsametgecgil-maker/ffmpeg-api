@@ -95,33 +95,23 @@ app.post("/process", upload.single("video"), async (req, res) => {
       });
     }
 
-    const filter = "scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280,fps=60";
+    const filter = "scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280";
 
     const args = [
       "-hide_banner",
-      "-loglevel",
-      "error",
+      "-loglevel", "error",
       "-y",
-      "-threads",
-      "2",
-      "-i",
-      inputFile,
-      "-vf",
-      filter,
-      "-c:v",
-      "libx264",
-      "-preset",
-      "ultrafast",
-      "-crf",
-      "26",
-      "-pix_fmt",
-      "yuv420p",
-      "-c:a",
-      "copy",
-      "-movflags",
-      "+faststart",
+      "-threads", "2",
+      "-i", inputFile,
+      "-vf", "scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280",
+      "-c:v", "libx264",
+      "-preset", "ultrafast",
+      "-crf", "23",
+      "-pix_fmt", "yuv420p",
+      "-c:a", "copy",
+      "-movflags", "+faststart",
       "-shortest",
-      outputFile,
+      outputFile
     ];
 
     await runFfmpeg(args);
