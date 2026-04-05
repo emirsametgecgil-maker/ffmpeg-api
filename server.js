@@ -81,7 +81,6 @@ app.post("/process", upload.single("video"), async (req, res) => {
   let inputFile = req.file?.path || null;
   const id = Date.now();
   const outputFile = `/tmp/output-${id}.mp4`;
-  const fps = Number(req.body.fps || 60);
 
   try {
     if (!inputFile && req.body.video_url) {
@@ -96,13 +95,15 @@ app.post("/process", upload.single("video"), async (req, res) => {
       });
     }
 
-    const filter = `scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,fps=${Number.isFinite(fps) ? fps : 60}`;
+    const filter = "scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280";
 
     const args = [
       "-hide_banner",
       "-loglevel",
       "error",
       "-y",
+      "-threads",
+      "2",
       "-i",
       inputFile,
       "-vf",
@@ -110,15 +111,16 @@ app.post("/process", upload.single("video"), async (req, res) => {
       "-c:v",
       "libx264",
       "-preset",
-      "veryfast",
+      "ultrafast",
       "-crf",
-      "23",
+      "26",
+      "-pix_fmt",
+      "yuv420p",
       "-c:a",
-      "aac",
-      "-b:a",
-      "128k",
+      "copy",
       "-movflags",
       "+faststart",
+      "-shortest",
       outputFile,
     ];
 
