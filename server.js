@@ -1,7 +1,6 @@
 const express = require("express");
 const multer = require("multer");
 const fs = require("fs");
-const path = require("path");
 const { execFile } = require("child_process");
 const https = require("https");
 const http = require("http");
@@ -22,15 +21,6 @@ function normalizeText(text = "") {
     .replace(/[“”„‟«»]/g, '"')
     .replace(/\r/g, "")
     .trim();
-}
-
-function escapePathForFilter(p) {
-  return String(p)
-    .replace(/\\/g, "/")
-    .replace(/:/g, "\\:")
-    .replace(/,/g, "\\,")
-    .replace(/\[/g, "\\[")
-    .replace(/\]/g, "\\]");
 }
 
 function downloadFile(fileUrl, outputPath) {
@@ -103,6 +93,7 @@ app.post("/process", upload.single("video"), async (req, res) => {
   const hookFile = `/tmp/hook-${id}.txt`;
   const ctaFile = `/tmp/cta-${id}.txt`;
   const usernameFile = `/tmp/username-${id}.txt`;
+  const filterFile = `/tmp/filter-${id}.txt`;
 
   try {
     if (!inputFile && req.body.video_url) {
@@ -118,35 +109,48 @@ app.post("/process", upload.single("video"), async (req, res) => {
     }
 
     const cleanupFiles = [];
-    const filters = [
-      "scale=1080:1920:force_original_aspect_ratio=increase",
-      "crop=1080:1920",
-      `fps=${Number.isFinite(fps) ? fps : 60}`,
-    ];
 
     if (hook) {
       fs.writeFileSync(hookFile, hook, "utf8");
       cleanupFiles.push(hookFile);
-      filters.push(
-        `drawtext=fontfile=${escapePathForFilter(FONT_PATH)}:textfile=${escapePathForFilter(hookFile)}:reload=1:fontcolor=white:fontsize=72:x=(w-text_w)/2:y=(h*0.12):box=1:boxcolor=black@0.55:boxborderw=18:enable='between(t,0,2.5)'`
-      );
     }
 
     if (cta) {
       fs.writeFileSync(ctaFile, cta, "utf8");
       cleanupFiles.push(ctaFile);
-      filters.push(
-        `drawtext=fontfile=${escapePathForFilter(FONT_PATH)}:textfile=${escapePathForFilter(ctaFile)}:reload=1:fontcolor=white:fontsize=60:x=(w-text_w)/2:y=(h*0.82):box=1:boxcolor=black@0.55:boxborderw=18:enable='gte(t,5)'`
-      );
     }
 
     if (username) {
       fs.writeFileSync(usernameFile, username, "utf8");
       cleanupFiles.push(usernameFile);
-      filters.push(
-        `drawtext=fontfile=${escapePathForFilter(FONT_PATH)}:textfile=${escapePathForFilter(usernameFile)}:reload=1:fontcolor=white:fontsize=46:x=(w-text_w)/2:y=(h*0.73):box=1:boxcolor=black@0.45:boxborderw=12`
+    }
+
+    const lines = [
+      `scale=1080:1920:force_original_aspect_ratio=increase`,
+      `crop=1080:1920`,
+      `fps=${Number.isFinite(fps) ? fps : 60}`,
+    ];
+
+    if (hook) {
+      lines.push(
+        `drawtext=fontfile='${FONT_PATH}':textfile='${hookFile}':reload=1:fontcolor=white:fontsize=72:x=(w-text_w)/2:y=(h*0.12):box=1:boxcolor=black@0.55:boxborderw=18:enable='between(t,0,2.5)'`
       );
     }
+
+    if (cta) {
+      lines.push(
+        `drawtext=fontfile='${FONT_PATH}':textfile='${ctaFile}':reload=1:fontcolor=white:fontsize=60:x=(w-text_w)/2:y=(h*0.82):box=1:boxcolor=black@0.55:boxborderw=18:enable='gte(t,5)'`
+      );
+    }
+
+    if (username) {
+      lines.push(
+        `drawtext=fontfile='${FONT_PATH}':textfile='${usernameFile}':reload=1:fontcolor=white:fontsize=46:x=(w-text_w)/2:y=(h*0.73):box=1:boxcolor=black@0.45:boxborderw=12`
+      );
+    }
+
+    fs.writeFileSync(filterFile, lines.join(","), "utf8");
+    cleanupFiles.push(filterFile);
 
     const args = [
       "-hide_banner",
@@ -155,8 +159,8 @@ app.post("/process", upload.single("video"), async (req, res) => {
       "-y",
       "-i",
       inputFile,
-      "-vf",
-      filters.join(","),
+      "-filter_complex_script",
+      filterFile,
       "-c:v",
       "libx264",
       "-preset",
@@ -205,7 +209,7 @@ app.post("/process", upload.single("video"), async (req, res) => {
 
     if (inputFile) fs.promises.unlink(inputFile).catch(() => {});
     fs.promises.unlink(outputFile).catch(() => {});
-    [hookFile, ctaFile, usernameFile].forEach((file) =>
+    [hookFile, ctaFile, usernameFile, filterFile].forEach((file) =>
       fs.promises.unlink(file).catch(() => {})
     );
 
