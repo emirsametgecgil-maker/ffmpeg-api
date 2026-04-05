@@ -16,18 +16,21 @@ app.use(express.urlencoded({ extended: true }));
 const PORT = process.env.PORT || 8080;
 const FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf";
 
-function safeText(text = "") {
+function normalizeText(text = "") {
   return String(text)
-    .replace(/[‘’‚‛‹›]/g, "'")   // curly apostrophe -> normal
-    .replace(/[“”„‟«»]/g, '"')   // curly quote -> normal
-    .replace(/\\/g, "\\\\")
+    .replace(/[‘’‚‛‹›]/g, "'")
+    .replace(/[“”„‟«»]/g, '"')
+    .replace(/\r/g, "")
+    .trim();
+}
+
+function escapePathForFilter(p) {
+  return String(p)
+    .replace(/\\/g, "/")
     .replace(/:/g, "\\:")
-    .replace(/'/g, "\\'")
-    .replace(/\[/g, "\\[")
-    .replace(/\]/g, "\\]")
     .replace(/,/g, "\\,")
-    .replace(/%/g, "\\%")
-    .replace(/\n/g, " ");
+    .replace(/\[/g, "\\[")
+    .replace(/\]/g, "\\]");
 }
 
 function downloadFile(fileUrl, outputPath) {
@@ -46,9 +49,7 @@ function downloadFile(fileUrl, outputPath) {
         }
 
         if (response.statusCode !== 200) {
-          return reject(
-            new Error(`Download failed with status ${response.statusCode}`)
-          );
+          return reject(new Error(`Download failed with status ${response.statusCode}`));
         }
 
         const fileStream = fs.createWriteStream(outputPath);
@@ -91,16 +92,21 @@ app.get("/", (_req, res) => {
 
 app.post("/process", upload.single("video"), async (req, res) => {
   let inputFile = req.file?.path || null;
-  const outputFile = `/tmp/output-${Date.now()}.mp4`;
+  const id = Date.now();
+  const outputFile = `/tmp/output-${id}.mp4`;
 
-  const hook = safeText(req.body.hook || "");
-  const cta = safeText(req.body.cta || "");
-  const username = safeText(req.body.username || "");
+  const hook = normalizeText(req.body.hook || "");
+  const cta = normalizeText(req.body.cta || "");
+  const username = normalizeText(req.body.username || "");
   const fps = Number(req.body.fps || 60);
+
+  const hookFile = `/tmp/hook-${id}.txt`;
+  const ctaFile = `/tmp/cta-${id}.txt`;
+  const usernameFile = `/tmp/username-${id}.txt`;
 
   try {
     if (!inputFile && req.body.video_url) {
-      inputFile = `/tmp/input-${Date.now()}.mp4`;
+      inputFile = `/tmp/input-${id}.mp4`;
       await downloadFile(req.body.video_url, inputFile);
     }
 
@@ -111,6 +117,7 @@ app.post("/process", upload.single("video"), async (req, res) => {
       });
     }
 
+    const cleanupFiles = [];
     const filters = [
       "scale=1080:1920:force_original_aspect_ratio=increase",
       "crop=1080:1920",
@@ -118,20 +125,26 @@ app.post("/process", upload.single("video"), async (req, res) => {
     ];
 
     if (hook) {
+      fs.writeFileSync(hookFile, hook, "utf8");
+      cleanupFiles.push(hookFile);
       filters.push(
-        `drawtext=fontfile='${FONT_PATH}':text='${hook}':fontcolor=white:fontsize=72:x=(w-text_w)/2:y=(h*0.12):box=1:boxcolor=black@0.55:boxborderw=18:enable='between(t,0,2.5)'`
+        `drawtext=fontfile=${escapePathForFilter(FONT_PATH)}:textfile=${escapePathForFilter(hookFile)}:reload=1:fontcolor=white:fontsize=72:x=(w-text_w)/2:y=(h*0.12):box=1:boxcolor=black@0.55:boxborderw=18:enable=between(t\\,0\\,2.5)`
       );
     }
 
     if (cta) {
+      fs.writeFileSync(ctaFile, cta, "utf8");
+      cleanupFiles.push(ctaFile);
       filters.push(
-        `drawtext=fontfile='${FONT_PATH}':text='${cta}':fontcolor=white:fontsize=60:x=(w-text_w)/2:y=(h*0.82):box=1:boxcolor=black@0.55:boxborderw=18:enable='gte(t,5)'`
+        `drawtext=fontfile=${escapePathForFilter(FONT_PATH)}:textfile=${escapePathForFilter(ctaFile)}:reload=1:fontcolor=white:fontsize=60:x=(w-text_w)/2:y=(h*0.82):box=1:boxcolor=black@0.55:boxborderw=18:enable=gte(t\\,5)`
       );
     }
 
     if (username) {
+      fs.writeFileSync(usernameFile, username, "utf8");
+      cleanupFiles.push(usernameFile);
       filters.push(
-        `drawtext=fontfile='${FONT_PATH}':text='${username}':fontcolor=white:fontsize=46:x=(w-text_w)/2:y=(h*0.73):box=1:boxcolor=black@0.45:boxborderw=12`
+        `drawtext=fontfile=${escapePathForFilter(FONT_PATH)}:textfile=${escapePathForFilter(usernameFile)}:reload=1:fontcolor=white:fontsize=46:x=(w-text_w)/2:y=(h*0.73):box=1:boxcolor=black@0.45:boxborderw=12`
       );
     }
 
@@ -166,10 +179,7 @@ app.post("/process", upload.single("video"), async (req, res) => {
     }
 
     res.setHeader("Content-Type", "video/mp4");
-    res.setHeader(
-      "Content-Disposition",
-      'attachment; filename="processed.mp4"'
-    );
+    res.setHeader("Content-Disposition", 'attachment; filename="processed.mp4"');
 
     const stream = fs.createReadStream(outputFile);
 
@@ -186,6 +196,7 @@ app.post("/process", upload.single("video"), async (req, res) => {
     stream.on("close", () => {
       if (inputFile) fs.promises.unlink(inputFile).catch(() => {});
       fs.promises.unlink(outputFile).catch(() => {});
+      cleanupFiles.forEach((file) => fs.promises.unlink(file).catch(() => {}));
     });
 
     stream.pipe(res);
@@ -194,6 +205,9 @@ app.post("/process", upload.single("video"), async (req, res) => {
 
     if (inputFile) fs.promises.unlink(inputFile).catch(() => {});
     fs.promises.unlink(outputFile).catch(() => {});
+    [hookFile, ctaFile, usernameFile].forEach((file) =>
+      fs.promises.unlink(file).catch(() => {})
+    );
 
     res.status(500).json({
       ok: false,
