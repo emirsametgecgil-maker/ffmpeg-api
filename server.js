@@ -1,6 +1,7 @@
 const express = require("express");
 const multer = require("multer");
 const fs = require("fs");
+const path = require("path");
 const { execFile } = require("child_process");
 const https = require("https");
 const http = require("http");
@@ -9,10 +10,10 @@ const { URL } = require("url");
 const app = express();
 const upload = multer({ dest: "/tmp/uploads" });
 
-app.use(express.json({ limit: "10mb" }));
+app.use(express.json({ limit: "20mb" }));
 app.use(express.urlencoded({ extended: true }));
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 8080;
 const FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf";
 
 function safeText(text = "") {
@@ -26,18 +27,6 @@ function safeText(text = "") {
     .replace(/\n/g, " ");
 }
 
-function runFfmpeg(args) {
-  return new Promise((resolve, reject) => {
-    execFile("ffmpeg", args, { maxBuffer: 20 * 1024 * 1024 }, (error, stdout, stderr) => {
-      if (error) {
-        reject(new Error(stderr || error.message));
-        return;
-      }
-      resolve({ stdout, stderr });
-    });
-  });
-}
-
 function downloadFile(fileUrl, outputPath) {
   return new Promise((resolve, reject) => {
     const parsed = new URL(fileUrl);
@@ -45,12 +34,18 @@ function downloadFile(fileUrl, outputPath) {
 
     client
       .get(fileUrl, (response) => {
-        if (response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
+        if (
+          response.statusCode >= 300 &&
+          response.statusCode < 400 &&
+          response.headers.location
+        ) {
           return resolve(downloadFile(response.headers.location, outputPath));
         }
 
         if (response.statusCode !== 200) {
-          return reject(new Error(`Download failed with status ${response.statusCode}`));
+          return reject(
+            new Error(`Download failed with status ${response.statusCode}`)
+          );
         }
 
         const fileStream = fs.createWriteStream(outputPath);
@@ -67,6 +62,26 @@ function downloadFile(fileUrl, outputPath) {
   });
 }
 
+function runFfmpeg(args) {
+  return new Promise((resolve, reject) => {
+    execFile(
+      "ffmpeg",
+      args,
+      {
+        maxBuffer: 100 * 1024 * 1024,
+      },
+      (error, stdout, stderr) => {
+        if (error) {
+          reject(new Error(error.message || "ffmpeg failed"));
+          return;
+        }
+
+        resolve({ stdout, stderr });
+      }
+    );
+  });
+}
+
 app.get("/", (_req, res) => {
   res.json({
     ok: true,
@@ -74,14 +89,32 @@ app.get("/", (_req, res) => {
   });
 });
 
-async function processVideo({ inputFile, hook, cta, username, fps, res }) {
+app.post("/process", upload.single("video"), async (req, res) => {
+  let inputFile = req.file?.path || null;
   const outputFile = `/tmp/output-${Date.now()}.mp4`;
 
+  const hook = safeText(req.body.hook || "");
+  const cta = safeText(req.body.cta || "");
+  const username = safeText(req.body.username || "");
+  const fps = Number(req.body.fps || 60);
+
   try {
+    if (!inputFile && req.body.video_url) {
+      inputFile = `/tmp/input-${Date.now()}.mp4`;
+      await downloadFile(req.body.video_url, inputFile);
+    }
+
+    if (!inputFile) {
+      return res.status(400).json({
+        ok: false,
+        error: "video or video_url is required",
+      });
+    }
+
     const filters = [
       "scale=1080:1920:force_original_aspect_ratio=increase",
       "crop=1080:1920",
-      `fps=${Number.isFinite(fps) ? fps : 30}`,
+      `fps=${Number.isFinite(fps) ? fps : 60}`,
     ];
 
     if (hook) {
@@ -103,6 +136,9 @@ async function processVideo({ inputFile, hook, cta, username, fps, res }) {
     }
 
     const args = [
+      "-hide_banner",
+      "-loglevel",
+      "error",
       "-y",
       "-i",
       inputFile,
@@ -125,54 +161,43 @@ async function processVideo({ inputFile, hook, cta, username, fps, res }) {
 
     await runFfmpeg(args);
 
+    if (!fs.existsSync(outputFile)) {
+      throw new Error("Output file was not created");
+    }
+
     res.setHeader("Content-Type", "video/mp4");
-    res.setHeader("Content-Disposition", 'attachment; filename="processed.mp4"');
+    res.setHeader(
+      "Content-Disposition",
+      'attachment; filename="processed.mp4"'
+    );
 
     const stream = fs.createReadStream(outputFile);
+
+    stream.on("error", (err) => {
+      console.error("Read stream error:", err);
+      if (!res.headersSent) {
+        res.status(500).json({
+          ok: false,
+          error: "Failed to read output video",
+        });
+      }
+    });
+
     stream.on("close", () => {
-      fs.promises.unlink(inputFile).catch(() => {});
+      if (inputFile) fs.promises.unlink(inputFile).catch(() => {});
       fs.promises.unlink(outputFile).catch(() => {});
     });
+
     stream.pipe(res);
   } catch (error) {
-    fs.promises.unlink(inputFile).catch(() => {});
+    console.error("Process error:", error);
+
+    if (inputFile) fs.promises.unlink(inputFile).catch(() => {});
     fs.promises.unlink(outputFile).catch(() => {});
+
     res.status(500).json({
       ok: false,
-      error: error.message,
-    });
-  }
-}
-
-app.post("/process", upload.single("video"), async (req, res) => {
-  const hook = safeText(req.body.hook || "");
-  const cta = safeText(req.body.cta || "");
-  const username = safeText(req.body.username || "");
-  const fps = Number(req.body.fps || 30);
-
-  let inputFile = req.file?.path;
-
-  try {
-    if (!inputFile && req.body.video_url) {
-      inputFile = `/tmp/input-${Date.now()}.mp4`;
-      await downloadFile(req.body.video_url, inputFile);
-    }
-
-    if (!inputFile) {
-      return res.status(400).json({
-        ok: false,
-        error: "video or video_url is required",
-      });
-    }
-
-    await processVideo({ inputFile, hook, cta, username, fps, res });
-  } catch (error) {
-    if (inputFile) {
-      fs.promises.unlink(inputFile).catch(() => {});
-    }
-    res.status(500).json({
-      ok: false,
-      error: error.message,
+      error: error.message || "Unknown processing error",
     });
   }
 });
