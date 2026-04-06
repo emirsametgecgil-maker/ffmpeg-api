@@ -124,7 +124,7 @@ app.post("/process", upload.single("video"), async (req, res) => {
       fs.writeFileSync(hookFile, hook, "utf8");
       cleanupFiles.push(hookFile);
       lines.push(
-        `drawtext=fontfile='${FONT_PATH}':textfile='${hookFile}':reload=1:fontcolor=white:fontsize=25:x=(w-text_w)/2:y=(h*0.12):enable='between(t,0,2.5)'`
+        `drawtext=fontfile='${FONT_PATH}':textfile='${hookFile}':reload=1:fontcolor=white:fontsize=26:x=(w-text_w)/2:y=(h*0.12):enable='between(t,0,2.5)'`
       );
     }
 
@@ -132,7 +132,7 @@ app.post("/process", upload.single("video"), async (req, res) => {
       fs.writeFileSync(ctaFile, cta, "utf8");
       cleanupFiles.push(ctaFile);
       lines.push(
-        `drawtext=fontfile='${FONT_PATH}':textfile='${ctaFile}':reload=1:fontcolor=white:fontsize=25:x=(w-text_w)/2:y=(h*0.82):enable='gte(t,5)'`
+        `drawtext=fontfile='${FONT_PATH}':textfile='${ctaFile}':reload=1:fontcolor=white:fontsize=24:x=(w-text_w)/2:y=(h*0.82):enable='gte(t,5)'`
       );
     }
 
