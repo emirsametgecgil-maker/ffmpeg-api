@@ -124,7 +124,7 @@ app.post("/process", upload.single("video"), async (req, res) => {
       fs.writeFileSync(hookFile, hook, "utf8");
       cleanupFiles.push(hookFile);
       lines.push(
-        `drawtext=fontfile='${FONT_PATH}':textfile='${hookFile}':reload=1:fontcolor=white:fontsize=48:x=(w-text_w)/2:y=(h*0.12):box=1:boxcolor=black@0.55:boxborderw=14:enable='between(t,0,2.5)'`
+        `drawtext=fontfile='${FONT_PATH}':textfile='${hookFile}':reload=1:fontcolor=white:fontsize=30:x=(w-text_w)/2:y=(h*0.12):enable='between(t,0,2.5)'`
       );
     }
 
@@ -132,7 +132,7 @@ app.post("/process", upload.single("video"), async (req, res) => {
       fs.writeFileSync(ctaFile, cta, "utf8");
       cleanupFiles.push(ctaFile);
       lines.push(
-        `drawtext=fontfile='${FONT_PATH}':textfile='${ctaFile}':reload=1:fontcolor=white:fontsize=40:x=(w-text_w)/2:y=(h*0.82):box=1:boxcolor=black@0.55:boxborderw=12:enable='gte(t,5)'`
+        `drawtext=fontfile='${FONT_PATH}':textfile='${ctaFile}':reload=1:fontcolor=white:fontsize=25:x=(w-text_w)/2:y=(h*0.82):enable='gte(t,5)'`
       );
     }
 
@@ -140,7 +140,7 @@ app.post("/process", upload.single("video"), async (req, res) => {
       fs.writeFileSync(usernameFile, username, "utf8");
       cleanupFiles.push(usernameFile);
       lines.push(
-        `drawtext=fontfile='${FONT_PATH}':textfile='${usernameFile}':reload=1:fontcolor=white:fontsize=36:x=(w-text_w)/2:y=(h*0.73):box=1:boxcolor=black@0.45:boxborderw=10`
+        `drawtext=fontfile='${FONT_PATH}':textfile='${usernameFile}':reload=1:fontcolor=white:fontsize=36:x=(w-text_w)/2:y=(h*0.77):`
       );
     }
 
